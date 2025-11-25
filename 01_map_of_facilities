@@ -1,0 +1,109 @@
+# Clear global environment
+
+rm(list = ls())
+
+# Load packages and set working directories
+
+library(ggplot2)
+library(stringr)
+library(readr)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(janitor)
+library(dataCompareR)
+library(grid)
+library(sf)
+library(ggbreak)
+library(glue)
+library(purrr)
+library(openxlsx)
+library(scales)
+library(ggbeeswarm)
+library(gridExtra)
+library(patchwork)
+
+# Load in functions
+
+setwd("C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/repos/physical_activity/functions")
+source("theme_csj.R")
+
+'%!in%' = Negate("%in%")
+
+# Set wd and paths
+
+setwd("C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data")
+import_path <- "C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data/import/"
+export_path <- "C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data/export/"
+
+# Import counts of facilities
+
+facilities_by_la <- read_excel(str_c(import_path, "ONS/Access to Sports Facilities, 2024.xlsx"), sheet = "Table 4", skip = 5) %>% 
+  clean_names()
+
+# facilities_by_mlsoa_count <- read_excel(str_c(import_path, "ONS/Access to Sports Facilities, 2024.xlsx"), sheet = "Table 6", skip = 5) %>% 
+#   clean_names()
+
+facilities_by_mlsoa_rate <- read_excel(str_c(import_path, "ONS/Access to Sports Facilities, 2024.xlsx"), sheet = "Table 10", skip = 6) %>% 
+  clean_names()
+
+# Import shps
+
+local_authority_shp <- st_read(str_c(import_path, "Maps/Local Authorities/LAD_MAY_2024_UK_BFE.shp")) %>% 
+  filter(str_sub(LAD24CD, 1, 1) %!in% c("W", "S", "N"))
+
+mlsoa_shp <- st_read(str_c(import_path, "Maps/MLSOAs/MSOA_2021_EW_BGC_V3.shp")) %>% 
+  filter(str_sub(MSOA21CD, 1, 1) %!in% c("W", "S", "N"))
+
+# Create LA map
+
+local_authority_build <- facilities_by_la %>%
+  left_join(local_authority_shp, by = c("lad_code" = "LAD24CD"))
+  
+la_map <- ggplot(local_authority_build) +
+    geom_sf(aes(geometry = geometry, fill = facilities_per_10_000_people),
+            linewidth = 0,
+            colour = NA) +
+    scale_fill_gradient(
+      low = "#FFFFFF", high = "#8f1f3a",      
+      name = "Sports Facilities\nper 10,000 People") +
+    theme_minimal() +
+    theme(
+      axis.text = element_blank(),   
+      axis.ticks = element_blank(),  
+      panel.grid = element_blank(),  
+      plot.title = element_text(margin = margin(b = 1)),
+      legend.title = element_text(margin = margin(b = 10)),
+      plot.margin = margin(1,1,1,1))
+  
+la_map
+
+test <- anti_join(facilities_by_la, local_authority_shp, by = c("lad_code" = "LAD24CD"))
+test2 <- anti_join(local_authority_shp, facilities_by_la, by = c("LAD24CD" = "lad_code"))
+
+# Create MLSOA map
+
+mlsoa_build <- facilities_by_mlsoa_rate %>%  
+  left_join(mlsoa_shp, by = c("msoa_code" = "MSOA21CD")) %>% 
+  filter(facilities_per_10_000_people < 80, facilities_per_10_000_people > 0)
+
+mlsoa_map <- ggplot(mlsoa_build) +
+  geom_sf(aes(geometry = geometry, fill = facilities_per_10_000_people),
+          linewidth = 0,
+          colour = NA) +
+  scale_fill_steps(
+    low = "yellow", high = "blue",      
+    name = "Sports Facilities\nper 10,000 People",
+    breaks = seq(0, 90, 10)) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),   
+    axis.ticks = element_blank(),  
+    panel.grid = element_blank(),  
+    plot.title = element_text(margin = margin(b = 1)),
+    legend.title = element_text(margin = margin(b = 10)),
+    plot.margin = margin(1,1,1,1))
+
+mlsoa_map
+
+suppressWarnings(suppressMessages(ggsave(str_c(export_path, glue("01_sports_facilities_map/01_sports_facilities_map.png")), plot = mlsoa_map)))
