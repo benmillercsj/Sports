@@ -1,0 +1,113 @@
+# Clear global environment
+
+rm(list = ls())
+
+# Load packages and set working directories
+
+library(ggplot2)
+library(stringr)
+library(readr)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(janitor)
+library(dataCompareR)
+library(grid)
+library(sf)
+library(ggbreak)
+library(glue)
+library(purrr)
+library(openxlsx)
+library(scales)
+library(ggbeeswarm)
+library(gridExtra)
+library(patchwork)
+
+# Load in functions
+
+setwd("C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/repos/physical_activity/functions")
+source("theme_csj.R")
+
+'%!in%' = Negate("%in%")
+
+# Set wd and paths
+
+setwd("C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data")
+import_path <- "C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data/import/"
+export_path <- "C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data/export/"
+
+# Import
+
+deprivation_import <- read_csv(str_c(import_path, "Sport England/Active Lives, Junior Most vs Least Deprived.csv"), skip = 4) %>% 
+  clean_names() %>% 
+  rename(group = 1) %>% 
+  mutate(type = "deprivation")
+
+gender_import <- read_csv(str_c(import_path, "Sport England/Active Lives, Junior Boys vs Girls.csv"), skip = 4) %>% 
+  clean_names() %>% 
+  rename(group = 1) %>% 
+  mutate(type = "gender")
+
+ethnicity_import <- read_csv(str_c(import_path, "Sport England/Active Lives, Junior Ethnicity.csv"), skip = 4) %>% 
+  clean_names() %>% 
+  rename(group = 1) %>% 
+  mutate(type = "ethnicity")
+
+# Build 
+
+group_build <- deprivation_import %>% 
+  bind_rows(gender_import, ethnicity_import) %>% 
+  mutate(group = str_replace(group, " decile", ""),
+         group = ifelse(type != "deprivation", sub(".*,\\s*", "", group), group),
+         across(-c(group, type), ~as.numeric(str_sub(., 1, 4))/100)) %>% 
+  pivot_longer(cols = -c(group, type)) %>% 
+  mutate(year = str_c("20", str_sub(name, -5, -4), "/", str_sub(name, -2, -1)),
+         group = case_when(type == "gender" ~ str_c(group, "s"),
+                           T ~ group),
+         group = str_to_title(group), 
+         group = factor(group, levels = c("Least Deprived", "Most Deprived",
+                                          "Boys", "Girls",
+                                          "White Other", "Mixed", "White British", "Asian", "Black"))) %>% 
+  filter(year %in% c("2017/18", "2024/25"))
+
+# Bar chart function
+
+plot_fn <- function(type_filter) {
+  
+  plot <- ggplot(group_build %>% filter(type == type_filter), aes(x = year, y = value, fill = group)) +
+    geom_col(position = "dodge") +
+    theme_csj() +
+    theme(legend.margin = margin(t = -10),
+          legend.box.margin = margin(t = -10)) +
+    scale_y_continuous(limits = c(0,0.55),
+                       breaks = seq(0, 0.5, 0.1),
+                       expand = c(0,0),
+                       labels = label_percent())+
+    labs(x = "", y = "") +
+    geom_text(aes(label = percent(value, accuracy = 0.1)),
+              position = position_dodge(width = 0.9),
+              vjust = -0.3)
+  
+  if(type_filter == "ethnicity") {
+    plot <- plot + scale_fill_manual(values = c("#e0bbbc", "#b02748", "#b4c1c8", "#7e76c2", "#dbd7f5"))
+  } else {
+    plot <- plot + scale_fill_manual(values = c("#b02748", "#e0bbbc"))
+  }
+  
+}
+
+deprivation <- plot_fn("deprivation")
+deprivation
+gender <- plot_fn("gender")
+gender
+ethnicity <- plot_fn("ethnicity")
+ethnicity
+
+(deprivation | gender) /
+  ethnicity +
+  plot_layout(heights = c(1, 1))
+
+ggsave(str_c(export_path, "04_active_lives_inequalities/01_inequalities.png"), plot = (deprivation | gender) /
+         ethnicity +
+         plot_layout(heights = c(1, 1)),
+       width = 1.5*6.11, height = 1.5*5.02)
