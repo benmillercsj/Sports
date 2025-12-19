@@ -1,0 +1,196 @@
+# Clear global environment
+
+rm(list = ls())
+
+# Load packages and set working directories
+
+library(ggplot2)
+library(stringr)
+library(readr)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(janitor)
+library(dataCompareR)
+library(grid)
+library(sf)
+library(ggbreak)
+library(glue)
+library(purrr)
+library(openxlsx)
+library(scales)
+library(ggbeeswarm)
+library(gridExtra)
+library(patchwork)
+
+# Load in functions
+
+setwd("C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/repos/physical_activity/functions")
+source("theme_csj.R")
+
+'%!in%' = Negate("%in%")
+
+# Set wd and paths
+
+setwd("C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data")
+import_path <- "C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data/import/"
+export_path <- "C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data/export/"
+
+# Import
+
+obesity_import <- read_excel(str_c(import_path, "NHS/Child Measurement Programme Data, academic year 24 to 25.xlsx"), sheet = "Table_7", skip = 3) %>% 
+  clean_names()
+
+# Build
+
+obesity_build <- obesity_import %>% 
+  mutate(academic_year = str_replace(academic_year_of_measurement_note_2_3_4, " to 20", "/"),
+         income_decile = ifelse(str_detect(imd_deprivation_decile, "most"), "Most Deprived", "Least Deprived"))
+
+# Line graph 
+
+plot_fn <- function(age, ymax) {
+  
+  plot <- ggplot(obesity_build %>% filter(str_detect(school_year, age)),
+                 aes(x = academic_year, y = prevalence_persons/100,
+                     linetype = bmi_category, colour = income_decile , shape = bmi_category,
+                     group = str_c(income_decile, bmi_category))) +
+    geom_line() +
+    geom_point(size = 2.5) +
+    theme_csj() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    scale_y_continuous(limits = c(0, ymax),
+                       breaks = seq(0, ymax, 0.05),
+                       labels = label_percent()) +
+    labs(x = "", y = "") +
+    guides(colour = guide_legend(nrow = 2, byrow = TRUE),
+           linetype = guide_legend(nrow = 2, byrow = TRUE)) +
+    scale_colour_manual(values = c("#e0bbbc", "#b02748"))
+  
+}
+
+reception_plot <- plot_fn("Reception", 0.25)
+reception_plot
+
+ggsave(str_c(export_path, "02_child_measurement_programme/02_reception_obesity.png"), plot = reception_plot)
+
+year_6_plot <- plot_fn("Year 6", 0.35)
+year_6_plot
+
+ggsave(str_c(export_path, "02_child_measurement_programme/02_year_6_obesity.png"), plot = year_6_plot)
+
+# Map
+
+local_authority_shp <- st_read(str_c(import_path, "Maps/Upper Tier Local Authorities/CTYUA_DEC_2017_EW_BFC_V5.shp")) %>% 
+  mutate(CTYUA17NM = str_replace(CTYUA17NM, ", City of", ""),
+         CTYUA17NM = str_replace(CTYUA17NM, ", County of", "")) 
+
+reception_by_la_import <- read_excel(str_c(import_path, "NHS/Child Measurement Programme Data, academic year 24 to 25.xlsx"),
+                                     sheet = "Table_9a", skip = 4) %>% 
+  clean_names() %>% 
+  filter(local_authority_name %!in% c("City of London", "Isles of Scilly", "Rutland")) %>%
+  mutate(local_authority_name = str_replace(local_authority_name, " UA", ""),
+         local_authority_name = str_replace(local_authority_name, ", Christchurch and Poole", ""),
+         local_authority_name = ifelse(str_detect(local_authority_name, "Northamptonshire"), "Northamptonshire", local_authority_name),
+         local_authority_name = ifelse(local_authority_name %in% c("Cumberland", "Westmorland and Furness"), "Cumbria", local_authority_name),
+         obesity_prevalence = as.numeric(obesity_prevalence),
+         severe_obesity_prevalence = as.numeric(severe_obesity_prevalence),
+         number_of_children_measured = as.numeric(number_of_children_measured),
+         obesity_count = as.numeric(obesity_count),
+         severe_obesity_count = as.numeric(severe_obesity_count)) %>% 
+  group_by(local_authority_name) %>% 
+  mutate(obesity_prevalence = 100*sum(obesity_count)/sum(number_of_children_measured),
+         severe_obesity_prevalence = 100*sum(severe_obesity_count)/sum(number_of_children_measured)) %>% 
+  ungroup() %>% 
+  distinct(local_authority_name, .keep_all =  T)
+
+reception_by_la_build <- reception_by_la_import %>%
+  filter(local_authority_code != "not applicable") %>% 
+  left_join(local_authority_shp, by = c("local_authority_name" = "CTYUA17NM"))
+
+year_6_by_la_import <- read_excel(str_c(import_path, "NHS/Child Measurement Programme Data, academic year 24 to 25.xlsx"),
+                                     sheet = "Table_9b", skip = 4) %>% 
+  clean_names() %>% 
+  filter(local_authority_name %!in% c("City of London", "Isles of Scilly")) %>% 
+  mutate(local_authority_name = str_replace(local_authority_name, " UA", ""),
+         local_authority_name = str_replace(local_authority_name, ", Christchurch and Poole", ""),
+         local_authority_name = ifelse(str_detect(local_authority_name, "Northamptonshire"), "Northamptonshire", local_authority_name),
+         local_authority_name = ifelse(local_authority_name %in% c("Cumberland", "Westmorland and Furness"), "Cumbria", local_authority_name),
+         obesity_prevalence = as.numeric(obesity_prevalence),
+         severe_obesity_prevalence = as.numeric(severe_obesity_prevalence),
+         number_of_children_measured = as.numeric(number_of_children_measured),
+         obesity_count = as.numeric(obesity_count),
+         severe_obesity_count = as.numeric(severe_obesity_count)) %>% 
+  group_by(local_authority_name) %>% 
+  mutate(obesity_prevalence = 100*sum(obesity_count)/sum(number_of_children_measured),
+         severe_obesity_prevalence = 100*sum(severe_obesity_count)/sum(number_of_children_measured)) %>% 
+  ungroup() %>% 
+  distinct(local_authority_name, .keep_all =  T)
+
+year_6_by_la_build <- year_6_by_la_import %>%
+  filter(local_authority_code != "not applicable") %>% 
+  left_join(local_authority_shp, by = c("local_authority_name" = "CTYUA17NM"))
+
+map_fn <- function(df, variable, min, max, breaks, title) {
+  
+la_map <- ggplot(df) +
+  geom_sf(aes(geometry = geometry, fill = !!sym(variable)),
+          colour = "white") +
+  scale_fill_steps(
+    low = "white", high = "#8f1f3a", 
+    breaks = seq(min, max, breaks),
+    name = "Rate (%)") +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),   
+    axis.ticks = element_blank(),  
+    panel.grid = element_blank(),  
+    plot.title = element_text(margin = margin(b = 1)),
+    legend.title = element_text(margin = margin(b = 10)),
+    plot.margin = margin(1,1,1,1)) +
+  labs(title = title)
+
+}
+
+reception_obesity_map <- map_fn(reception_by_la_build, "obesity_prevalence", 5, 17.5, 2.5, "Reception Obesity")
+reception_sev_obesity_map <- map_fn(reception_by_la_build, "severe_obesity_prevalence", 1, 5, 0.5, "Reception Severe Obesity")
+year_6_obesity_map <- map_fn(year_6_by_la_build, "obesity_prevalence", 10, 35, 5, "Year 6 Obesity")
+year_6_sev_obesity_map <- map_fn(year_6_by_la_build, "severe_obesity_prevalence", 2, 10, 1, "Year 6 Severe Obesity")
+
+#obesity_maps_combined <- grid.arrange(reception_obesity_map, reception_sev_obesity_map,
+#                                      year_6_obesity_map, year_6_sev_obesity_map, ncol = 2)
+
+(reception_obesity_map | reception_sev_obesity_map) /
+(year_6_obesity_map | year_6_sev_obesity_map) +
+  plot_layout(heights = c(1, 1))
+
+ggsave(str_c(export_path, "02_child_measurement_programme/03_obesity_maps.png"),
+       plot = (reception_obesity_map | reception_sev_obesity_map) /
+         (year_6_obesity_map | year_6_sev_obesity_map) +
+         plot_layout(heights = c(1, 1)),
+       width = 2*6.11, height = 2*4.5)
+
+# Stats
+
+north_less_than_10 <- reception_by_la_build %>% 
+  filter(geographic_region_name %in% c("North East", "North West")) %>% 
+  summarise(less_than_10 = sum(obesity_prevalence < 10),
+            n = n())
+
+se_less_than_10 <- reception_by_la_build %>% 
+  filter(geographic_region_name %in% c("South East")) %>% 
+  summarise(less_than_10 = sum(obesity_prevalence < 10),
+            n = n())
+
+# Archive
+
+test1 <- reception_by_la_build %>% 
+  filter(is.na(LAT)) %>% 
+  select(local_authority_name)
+
+test2 <- local_authority_shp %>% 
+  left_join(reception_by_la_import %>%
+              filter(local_authority_code != "not applicable"), by = c("CTYUA17NM"  = "local_authority_name")) %>% 
+  filter(is.na(school_year), !str_detect(CTYUA17CD, "W")) %>% 
+  select(CTYUA17NM)
+
