@@ -1,0 +1,129 @@
+# Clear global environment
+
+rm(list = ls())
+
+# Load packages and set working directories
+
+library(ggplot2)
+library(stringr)
+library(readr)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(janitor)
+library(dataCompareR)
+library(grid)
+library(sf)
+library(ggbreak)
+library(glue)
+library(purrr)
+library(openxlsx)
+library(scales)
+library(ggbeeswarm)
+library(gridExtra)
+library(patchwork)
+
+# Load in functions
+
+setwd("C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/repos/physical_activity/functions")
+source("theme_csj.R")
+
+'%!in%' = Negate("%in%")
+
+# Set wd and paths
+
+setwd("C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data")
+import_path <- "C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data/import/"
+export_path <- "C:/Users/BenMiller/OneDrive - Centre for Social Justice/Documents/R/physical_activity/data/export/"
+
+## Infant
+
+# Import 
+
+infant_import <- read_csv(str_c(import_path, "Sport England/Active Lives, Infant Activity Levels.csv"), skip = 4) %>% 
+  clean_names()
+
+infant_inactive_import <- read_csv(str_c(import_path, "Sport England/Active Lives, Infant Inactive Proportion.csv"), skip = 4) %>% 
+  clean_names() %>% 
+  slice(1)
+
+# Build
+
+infant_build <- infant_import %>%
+  bind_rows(infant_inactive_import) %>% 
+  rename(activity = 1) %>% 
+  mutate(across(-activity, ~as.numeric(str_sub(., 1, -2))/100)) %>% 
+  pivot_longer(cols = -activity) %>% 
+  mutate(activity = case_when(str_detect(activity, "Less active") ~ "Less than 30 Minutes",
+                              str_detect(activity, "Fairly active") ~ "30 to 59 Minutes",
+                              str_detect(activity, "0 minutes") ~ "Percent of Less than 30 Minutes Completely Inactive",
+                              T ~ "More than 60 Minutes"),
+         activity = factor(activity, levels = c("More than 60 Minutes", "30 to 59 Minutes", "Less than 30 Minutes", "Percent of Less than 30 Minutes Completely Inactive")),
+         type_flag = ifelse(activity == "Percent of Less than 30 Minutes Completely Inactive", "actiivty", "other"), 
+         year = str_c("20", str_sub(name, -5, -4), "/", str_sub(name, -2, -1)))
+
+infant_plot <- ggplot(infant_build, aes(x = year, y = value, colour = activity, group = activity, linetype = type_flag)) +
+  geom_line() +
+  geom_point(size = 2.5) +
+  theme_csj() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  scale_y_continuous(limits = c(0.1, 0.6),
+                     breaks = seq(0.1, 0.6, 0.1),
+                     expand = c(0,0),
+                     labels = label_percent()) +
+  scale_linetype_manual(values = c("dashed","solid")) +
+  scale_colour_manual(values = c("#b02748", "#e0bbbc", "#7e76c2", "#27234c")) +
+  guides(colour = guide_legend(nrow = 2, byrow = TRUE),
+         linetype = "none") +
+  labs(x = "", y = "")
+
+infant_plot
+
+ggsave(str_c(export_path, "03_active_lives_physical_activity/01_infant_activity.png"), plot = infant_plot,
+       width = 1.25*6.1, height = 5.05)
+
+## Primary
+
+# Import 
+
+primary_import <- read_csv(str_c(import_path, "Sport England/Active Lives, Primary Activity Levels.csv"), skip = 4) %>% 
+  clean_names()
+
+primary_inactive_import <- read_csv(str_c(import_path, "Sport England/Active Lives, Primary Inactive Proportion.csv"), skip = 4) %>% 
+  clean_names() %>% 
+  slice(1)
+
+# Build
+
+primary_build <- primary_import %>%
+  bind_rows(primary_inactive_import) %>% 
+  rename(activity = 1) %>% 
+  mutate(across(-activity, ~as.numeric(str_sub(., 1, -2))/100)) %>% 
+  pivot_longer(cols = -activity) %>% 
+  mutate(activity = case_when(str_detect(activity, "Less active") ~ "Less than 30 Minutes",
+                              str_detect(activity, "Fairly active") ~ "30 to 59 Minutes",
+                              str_detect(activity, "0 minutes") ~ "Percent of Less than 30 Minutes Completely Inactive",
+                              T ~ "More than 60 Minutes"),
+         activity = factor(activity, levels = c("More than 60 Minutes", "30 to 59 Minutes", "Less than 30 Minutes", "Percent of Less than 30 Minutes Completely Inactive")),
+         type_flag = ifelse(activity == "Percent of Less than 30 Minutes Completely Inactive", "actiivty", "other"), 
+         year = str_c("20", str_sub(name, -5, -4), "/", str_sub(name, -2, -1)))
+
+primary_plot <- ggplot(primary_build, aes(x = year, y = value, colour = activity, group = activity, linetype = type_flag)) +
+  geom_line() +
+  geom_point(size = 2.5) +
+  theme_csj() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  scale_y_continuous(limits = c(0.1, 0.5),
+                     breaks = seq(0.1, 0.5, 0.1),
+                     expand = c(0,0),
+                     labels = label_percent()) +
+  scale_linetype_manual(values = c("dashed","solid")) +
+  scale_colour_manual(values = c("#b02748", "#e0bbbc", "#7e76c2", "#27234c")) +
+  guides(colour = guide_legend(nrow = 2, byrow = TRUE),
+         linetype = "none") +
+  labs(x = "", y = "")
+
+primary_plot
+
+ggsave(str_c(export_path, "03_active_lives_physical_activity/01_primary_activity.png"), plot = primary_plot,
+       width = 1.25*6.1, height = 5.05)
