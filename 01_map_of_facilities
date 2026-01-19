@@ -81,37 +81,6 @@ la_map
 ggsave(str_c(export_path, "01_sports_facilities_map/02_sports_facilities_map_by_la.png"), plot = la_map,
        width = 2*6.11, height = 2*4.5)
 
-# # Create MLSOA map
-# 
-# mlsoa_build <- facilities_by_mlsoa_rate %>%  
-#   left_join(mlsoa_shp, by = c("msoa_code" = "MSOA21CD")) %>% 
-#   filter(facilities_per_10_000_people < 80, facilities_per_10_000_people > 0)
-# 
-# mlsoa_map <- ggplot(mlsoa_build) +
-#   geom_sf(aes(geometry = geometry, fill = facilities_per_10_000_people),
-#           linewidth = 0,
-#           colour = NA) +
-#   scale_fill_steps(
-#     low = "yellow", high = "blue",      
-#     name = "Sports Facilities\nper 10,000 People",
-#     breaks = seq(0, 90, 10)) +
-#   theme_minimal() +
-#   theme(
-#     axis.text = element_blank(),   
-#     axis.ticks = element_blank(),  
-#     panel.grid = element_blank(),  
-#     plot.title = element_text(margin = margin(b = 1)),
-#     plot.margin = margin(1,1,1,1),
-#     legend.text  = element_text(size = 9),
-#     legend.title = element_text(margin = margin(b = 10),
-#                                 size = 10),
-#     legend.key.size = unit(0.6, "lines"))
-# 
-# mlsoa_map
-# 
-# suppressWarnings(suppressMessages(ggsave(str_c(export_path, glue("01_sports_facilities_map/01_sports_facilities_map.png")), plot = mlsoa_map)))
-
-
 # Stats by LA
 
 stats_by_grouped_mlsoa <- mlsoa_build %>% 
@@ -122,5 +91,45 @@ stats_by_grouped_mlsoa <- mlsoa_build %>%
             facilities_per_10_000_people = sum(counts)/(number_people/10000)) %>% 
   ungroup()
 
+# LA map of participation
 
-         
+participation_import <- read_csv(str_c(import_path, "Sport England/Active Lives, Participation sports outside school hours.csv"), skip = 3)
+
+local_authority_shp_2024 <- st_read(str_c(import_path, "Maps/Local Authorities/LAD_MAY_2024_UK_BFE.shp")) %>% 
+  clean_names()
+
+participation_build <- participation_import %>%
+  rename(local_authority = 1, ay_22_23 = 7, ay_23_24 = 8, ay_24_25 = 9) %>% 
+  filter(str_sub(local_authority, -2, -1) != "CC") %>% 
+  select(local_authority, ay_22_23, ay_23_24, ay_24_25) %>% 
+  mutate(across(starts_with("ay"), ~ifelse(. == "-", NA, .)),
+         across(starts_with("ay"), ~str_sub(., 1, 4)),
+         ay_24_25 = case_when(is.na(ay_24_25) & is.na(ay_23_24) ~ ay_22_23, 
+                              is.na(ay_24_25) & !is.na(ay_23_24) ~ ay_23_24,
+                              T ~ ay_24_25),
+         ay_24_25 = as.numeric(ay_24_25),
+         local_authority = str_sub(local_authority, 1, -4),
+         local_authority = case_when(str_detect(local_authority, "Hackney") ~ "Hackney",
+                                     str_detect(local_authority, "Cornwall") ~ "Cornwall",
+                                     str_detect(local_authority, "Kings Lynn and West Norfolk") ~ "King's Lynn and West Norfolk",
+                                     T ~ local_authority)) %>% 
+  left_join(local_authority_shp_2024, by = c("local_authority" = "lad24nm"))
+
+participation_map <- ggplot(participation_build) +
+  geom_sf(aes(geometry = geometry, fill = ay_24_25),
+          colour = "white") +
+  scale_fill_steps(
+    low = "white", high = "#b02748",
+    breaks = seq(60, 100, 10),
+    name = "Participation in\nSports Last\nWeek") +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),   
+    axis.ticks = element_blank(),  
+    panel.grid = element_blank(),  
+    plot.title = element_text(margin = margin(b = 1)),
+    legend.title = element_text(margin = margin(b = 10)),
+    plot.margin = margin(1,1,1,1))
+
+participation_map
+ 
