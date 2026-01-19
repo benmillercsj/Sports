@@ -49,23 +49,23 @@ facilities_by_mlsoa_rate <- read_excel(str_c(import_path, "ONS/Access to Sports 
 
 # Import shps
 
-local_authority_shp <- st_read(str_c(import_path, "Maps/Local Authorities/LAD_MAY_2024_UK_BFE.shp")) %>% 
-  filter(str_sub(LAD24CD, 1, 1) %!in% c("W", "S", "N"))
+local_authority_shp <- st_read(str_c(import_path, "Maps/Local Authorities 2022/LAD_DEC_2022_UK_BUC_V2.shp"))
 
-mlsoa_shp <- st_read(str_c(import_path, "Maps/MLSOAs/MSOA_2021_EW_BGC_V3.shp")) %>% 
-  filter(str_sub(MSOA21CD, 1, 1) %!in% c("W", "S", "N"))
+# mlsoa_shp <- st_read(str_c(import_path, "Maps/MLSOAs/MSOA_2021_EW_BGC_V3.shp")) %>% 
+#   filter(str_sub(MSOA21CD, 1, 1) %!in% c("W", "S", "N"))
 
 # Create LA map
 
 local_authority_build <- facilities_by_la %>%
-  left_join(local_authority_shp, by = c("lad_code" = "LAD24CD"))
+  left_join(local_authority_shp, by = c("lad_code" = "LAD22CD")) %>% 
+  filter(lad_name != "City of London")
   
 la_map <- ggplot(local_authority_build) +
     geom_sf(aes(geometry = geometry, fill = facilities_per_10_000_people),
-            linewidth = 0,
-            colour = NA) +
-    scale_fill_gradient(
-      low = "#FFFFFF", high = "#8f1f3a",      
+            colour = "white") +
+    scale_fill_steps(
+      low = "white", high = "#b02748",
+      breaks = seq(0, 50, 10),
       name = "Sports Facilities\nper 10,000 People") +
     theme_minimal() +
     theme(
@@ -78,32 +78,49 @@ la_map <- ggplot(local_authority_build) +
   
 la_map
 
-test <- anti_join(facilities_by_la, local_authority_shp, by = c("lad_code" = "LAD24CD"))
-test2 <- anti_join(local_authority_shp, facilities_by_la, by = c("LAD24CD" = "lad_code"))
+ggsave(str_c(export_path, "01_sports_facilities_map/02_sports_facilities_map_by_la.png"), plot = la_map,
+       width = 2*6.11, height = 2*4.5)
 
-# Create MLSOA map
+# # Create MLSOA map
+# 
+# mlsoa_build <- facilities_by_mlsoa_rate %>%  
+#   left_join(mlsoa_shp, by = c("msoa_code" = "MSOA21CD")) %>% 
+#   filter(facilities_per_10_000_people < 80, facilities_per_10_000_people > 0)
+# 
+# mlsoa_map <- ggplot(mlsoa_build) +
+#   geom_sf(aes(geometry = geometry, fill = facilities_per_10_000_people),
+#           linewidth = 0,
+#           colour = NA) +
+#   scale_fill_steps(
+#     low = "yellow", high = "blue",      
+#     name = "Sports Facilities\nper 10,000 People",
+#     breaks = seq(0, 90, 10)) +
+#   theme_minimal() +
+#   theme(
+#     axis.text = element_blank(),   
+#     axis.ticks = element_blank(),  
+#     panel.grid = element_blank(),  
+#     plot.title = element_text(margin = margin(b = 1)),
+#     plot.margin = margin(1,1,1,1),
+#     legend.text  = element_text(size = 9),
+#     legend.title = element_text(margin = margin(b = 10),
+#                                 size = 10),
+#     legend.key.size = unit(0.6, "lines"))
+# 
+# mlsoa_map
+# 
+# suppressWarnings(suppressMessages(ggsave(str_c(export_path, glue("01_sports_facilities_map/01_sports_facilities_map.png")), plot = mlsoa_map)))
 
-mlsoa_build <- facilities_by_mlsoa_rate %>%  
-  left_join(mlsoa_shp, by = c("msoa_code" = "MSOA21CD")) %>% 
-  filter(facilities_per_10_000_people < 80, facilities_per_10_000_people > 0)
 
-mlsoa_map <- ggplot(mlsoa_build) +
-  geom_sf(aes(geometry = geometry, fill = facilities_per_10_000_people),
-          linewidth = 0,
-          colour = NA) +
-  scale_fill_steps(
-    low = "yellow", high = "blue",      
-    name = "Sports Facilities\nper 10,000 People",
-    breaks = seq(0, 90, 10)) +
-  theme_minimal() +
-  theme(
-    axis.text = element_blank(),   
-    axis.ticks = element_blank(),  
-    panel.grid = element_blank(),  
-    plot.title = element_text(margin = margin(b = 1)),
-    legend.title = element_text(margin = margin(b = 10)),
-    plot.margin = margin(1,1,1,1))
+# Stats by LA
 
-mlsoa_map
+stats_by_grouped_mlsoa <- mlsoa_build %>% 
+  mutate(la = str_sub(msoa_name, 1, -5),
+         people_per_facility = as.numeric(people_per_facility)) %>% 
+  group_by(la) %>% 
+  summarise(number_people = sum(counts*people_per_facility),
+            facilities_per_10_000_people = sum(counts)/(number_people/10000)) %>% 
+  ungroup()
 
-suppressWarnings(suppressMessages(ggsave(str_c(export_path, glue("01_sports_facilities_map/01_sports_facilities_map.png")), plot = mlsoa_map)))
+
+         
